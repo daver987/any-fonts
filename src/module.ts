@@ -22,36 +22,11 @@ export interface ModuleOptions extends DownloadOptions, GoogleFonts {
   useStylesheet?: boolean
   download?: boolean
   inject?: boolean
+  localFontsStylePath?: string
   localFonts?: { name: string; path: string }[]
 }
 
 const logger = useLogger('nuxt:google-fonts')
-
-async function copyFileToDir (srcPath: string, destDir: string): Promise<void> {
-  try {
-    // Resolve the source path relative to the Nuxt project root
-    const resolvedSrcPath = await resolvePath(srcPath)
-
-    // Ensure the destination directory exists
-    fs.mkdirSync(destDir, { recursive: true })
-
-    // Extract the filename from the source path
-    const fileName = resolvedSrcPath.split('/').pop() || ''
-    console.log(`Resolved Source Path: ${resolvedSrcPath}`)
-    // Construct the destination path
-    const destPath = resolve(destDir, fileName)
-    console.log(`Destination Path: ${destPath}`)
-
-    // Copy the file
-    fs.copyFile(resolvedSrcPath, destPath, (err) => {
-      if (err) {
-        throw err
-      }
-    })
-  } catch (e) {
-    logger.error(e)
-  }
-}
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
@@ -73,12 +48,49 @@ export default defineNuxtModule<ModuleOptions>({
     inject: true,
     overwriting: false,
     localFonts: [],
+    localFontsStylePath: 'css/nuxt-local-fonts.css',
     outputDir: 'node_modules/.cache/nuxt-google-fonts',
     stylePath: 'css/nuxt-google-fonts.css',
     fontsDir: 'fonts',
     fontsPath: '../fonts'
   },
   async setup (options, nuxt) {
+    // Handle local fonts
+    if (options.localFonts && options.localFonts.length > 0) {
+      const outputDir = await resolvePath(options.outputDir)
+      let localFontsCSS = ''
+
+      try {
+        for (const font of options.localFonts) {
+          const fontPath = resolve(outputDir, font.path)
+          const fontName = font.name
+          localFontsCSS += `
+          @font-face {
+            font-family: '${fontName}';
+            src: url('${fontPath}');
+          }
+          `
+        }
+
+        // Save the generated CSS to a file in the output directory
+        const cssFilePath = resolve(outputDir, 'local-fonts.css')
+        await fs.promises.writeFile(cssFilePath, localFontsCSS)
+
+        if (options.inject) {
+          nuxt.options.css.push(cssFilePath)
+        }
+
+        // Add the output directory to Nuxt's public assets
+        nuxt.options.nitro = nuxt.options.nitro || {}
+        nuxt.options.nitro.publicAssets = nuxt.options.nitro.publicAssets || []
+        nuxt.options.nitro.publicAssets.push({ dir: outputDir })
+      } catch (e) {
+        logger.error(e)
+      }
+
+      return
+    }
+
     // If a user hasn't set the display value manually and isn't using
     // a preload, set the default display value to 'swap'
     if (options.display === undefined && !options.preload) {
@@ -113,45 +125,6 @@ export default defineNuxtModule<ModuleOptions>({
 
     // remove fonts
     head.link = head.link.filter(link => !isValidURL(String(link.href)))
-
-    // Handle local fonts
-    if (options.localFonts && options.localFonts.length > 0) {
-      const outputDir = await resolvePath(options.outputDir)
-      let localFontsCSS = ''
-
-      try {
-        for (const font of options.localFonts) {
-          const fontPath = resolve(outputDir, font.path)
-          // Assuming the font name is the file name without an extension
-          const fontName = font.name
-          localFontsCSS += `
-          @font-face {
-            font-family: '${fontName}';
-            src: url('${fontPath}');
-          }
-          `
-
-          await copyFileToDir(font.path, outputDir)
-        }
-
-        // Save the generated CSS to a file in the output directory
-        const cssFilePath = resolve(outputDir, 'local-fonts.css')
-        await fs.promises.writeFile(cssFilePath, localFontsCSS)
-
-        if (options.inject) {
-          nuxt.options.css.push(cssFilePath)
-        }
-
-        // Add the output directory to Nuxt's public assets
-        nuxt.options.nitro = nuxt.options.nitro || {}
-        nuxt.options.nitro.publicAssets = nuxt.options.nitro.publicAssets || []
-        nuxt.options.nitro.publicAssets.push({ dir: outputDir })
-      } catch (e) {
-        logger.error(e)
-      }
-
-      return
-    }
 
     // download
     if (options.download) {
