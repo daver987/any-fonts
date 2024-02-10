@@ -1,6 +1,6 @@
 {
   "name": "@daver987/nuxt-any-fonts",
-  "version": "2.0.0",
+  "version": "0.0.2",
   "description": "A Fork of nuxt-modules/google-fonts that also supports local fonts",
   "repository": "daver987/any-fonts",
   "license": "MIT",
