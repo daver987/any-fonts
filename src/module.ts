@@ -1,7 +1,16 @@
+import * as fs from 'fs'
 import { resolve } from 'pathe'
 import type { MetaObject } from '@nuxt/schema'
 import { defineNuxtModule, isNuxt2, resolvePath, useLogger } from '@nuxt/kit'
-import { constructURL, download, isValidURL, parse, merge, type DownloadOptions, type GoogleFonts } from 'google-fonts-helper'
+import {
+  constructURL,
+  download,
+  isValidURL,
+  parse,
+  merge,
+  type DownloadOptions,
+  type GoogleFonts
+} from 'google-fonts-helper'
 import { name, version } from '../package.json'
 
 type NuxtAppHead = Required<MetaObject>
@@ -13,9 +22,36 @@ export interface ModuleOptions extends DownloadOptions, GoogleFonts {
   useStylesheet?: boolean
   download?: boolean
   inject?: boolean
+  localFonts?: { name: string; path: string }[]
 }
 
 const logger = useLogger('nuxt:google-fonts')
+
+async function copyFileToDir (srcPath: string, destDir: string): Promise<void> {
+  try {
+    // Resolve the source path relative to the Nuxt project root
+    const resolvedSrcPath = await resolvePath(srcPath)
+
+    // Ensure the destination directory exists
+    fs.mkdirSync(destDir, { recursive: true })
+
+    // Extract the filename from the source path
+    const fileName = resolvedSrcPath.split('/').pop() || ''
+    console.log(`Resolved Source Path: ${resolvedSrcPath}`)
+    // Construct the destination path
+    const destPath = resolve(destDir, fileName)
+    console.log(`Destination Path: ${destPath}`)
+
+    // Copy the file
+    fs.copyFile(resolvedSrcPath, destPath, (err) => {
+      if (err) {
+        throw err
+      }
+    })
+  } catch (e) {
+    logger.error(e)
+  }
+}
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
@@ -25,7 +61,7 @@ export default defineNuxtModule<ModuleOptions>({
   },
   defaults: {
     families: {},
-    display: undefined, // set to 'swap' later if no preload or user value
+    display: undefined,
     subsets: [],
     text: undefined,
     prefetch: true,
@@ -36,13 +72,14 @@ export default defineNuxtModule<ModuleOptions>({
     base64: false,
     inject: true,
     overwriting: false,
+    localFonts: [],
     outputDir: 'node_modules/.cache/nuxt-google-fonts',
     stylePath: 'css/nuxt-google-fonts.css',
     fontsDir: 'fonts',
     fontsPath: '../fonts'
   },
   async setup (options, nuxt) {
-    // If user hasn't set the display value manually and isn't using
+    // If a user hasn't set the display value manually and isn't using
     // a preload, set the default display value to 'swap'
     if (options.display === undefined && !options.preload) {
       options.display = 'swap'
@@ -76,6 +113,45 @@ export default defineNuxtModule<ModuleOptions>({
 
     // remove fonts
     head.link = head.link.filter(link => !isValidURL(String(link.href)))
+
+    // Handle local fonts
+    if (options.localFonts && options.localFonts.length > 0) {
+      const outputDir = await resolvePath(options.outputDir)
+      let localFontsCSS = ''
+
+      try {
+        for (const font of options.localFonts) {
+          const fontPath = resolve(outputDir, font.path)
+          // Assuming the font name is the file name without an extension
+          const fontName = font.name
+          localFontsCSS += `
+          @font-face {
+            font-family: '${fontName}';
+            src: url('${fontPath}');
+          }
+          `
+
+          await copyFileToDir(font.path, outputDir)
+        }
+
+        // Save the generated CSS to a file in the output directory
+        const cssFilePath = resolve(outputDir, 'local-fonts.css')
+        await fs.promises.writeFile(cssFilePath, localFontsCSS)
+
+        if (options.inject) {
+          nuxt.options.css.push(cssFilePath)
+        }
+
+        // Add the output directory to Nuxt's public assets
+        nuxt.options.nitro = nuxt.options.nitro || {}
+        nuxt.options.nitro.publicAssets = nuxt.options.nitro.publicAssets || []
+        nuxt.options.nitro.publicAssets.push({ dir: outputDir })
+      } catch (e) {
+        logger.error(e)
+      }
+
+      return
+    }
 
     // download
     if (options.download) {
@@ -152,7 +228,7 @@ export default defineNuxtModule<ModuleOptions>({
           crossorigin: 'anonymous'
         },
 
-        // Should also preconnect to origin of Google fonts stylesheet.
+        // Should also preconnect to the origin of Google fonts stylesheet.
         {
           key: 'gf-origin-preconnect',
           rel: 'preconnect',
@@ -197,7 +273,7 @@ export default defineNuxtModule<ModuleOptions>({
         tagPosition: 'bodyOpen'
       })
 
-      // Disable sanitazions
+      // Disable sanitation
       // @ts-ignore
       head.__dangerouslyDisableSanitizersByTagID = head.__dangerouslyDisableSanitizersByTagID || {}
       // @ts-ignore
@@ -211,7 +287,7 @@ export default defineNuxtModule<ModuleOptions>({
     // JS to inject CSS
     head.script.unshift({
       key: 'gf-script',
-      children: `(function(){
+      innerHTML: `(function(){
         var h=document.querySelector("head");
         var m=h.querySelector('meta[name="head:count"]');
         if(m){m.setAttribute('content',Number(m.getAttribute('content'))+1);}
@@ -222,7 +298,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     // no-JS fallback
     head.noscript.push({
-      children: `<link rel="stylesheet" href="${url}">`,
+      innerHTML: `<link rel="stylesheet" href="${url}">`,
       tagPosition: 'bodyOpen'
     })
   }
