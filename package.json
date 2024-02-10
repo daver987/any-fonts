@@ -1,6 +1,6 @@
 {
   "name": "@daver987/nuxt-any-fonts",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A Fork of nuxt-modules/google-fonts that also supports local fonts",
   "repository": "daver987/any-fonts",
   "license": "MIT",
@@ -32,9 +32,9 @@
     "test": "pnpm lint && vitest run --coverage"
   },
   "dependencies": {
-    "@nuxt/kit": "^3.9.0",
+    "@nuxt/kit": "^3.10.1",
     "google-fonts-helper": "^3.4.1",
-    "pathe": "^1.1.1"
+    "pathe": "^1.1.2"
   },
   "devDependencies": {
     "@nuxt/module-builder": "latest",
